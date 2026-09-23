@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Serverless URL Shortener</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 0 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input[type="url"] { width: 70%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 4px; }
+        button { width: 25%; padding: 12px; font-size: 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 20px; padding: 20px; background: #e7f3ff; border-radius: 4px; display: none; }
+        .error { background: #ffe7e7; color: #d00; }
+        table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .loading { opacity: 0.6; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Serverless URL Shortener</h1>
+        <p>No database. No servers. Just AWS Lambda + S3.</p>
+        
+        <div>
+            <input type="url" id="urlInput" placeholder="https://example.com/very/long/url" required>
+            <button id="shortenBtn" onclick="shortenUrl()">Shorten</button>
+        </div>
+
+        <div id="result" class="result"></div>
+
+        <h2 style="margin-top: 40px;">Recent Links</h2>
+        <button onclick="loadStats()" style="width: auto; margin-left: 0; margin-bottom: 10px;">Refresh List</button>
+        <table id="statsTable">
+            <thead>
+                <tr>
+                    <th>Short URL</th>
+                    <th>Original URL</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody id="statsBody">
+                <tr><td colspan="3">Click Refresh to load data</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // ⭐ REPLACE THIS WITH YOUR API GATEWAY URL
+        const API_URL = 'https://lre4y6ea2i.execute-api.us-east-1.amazonaws.com/';
+        
+        async function shortenUrl() {
+            const input = document.getElementById('urlInput');
+            const btn = document.getElementById('shortenBtn');
+            const resultDiv = document.getElementById('result');
+            const url = input.value.trim();
+            
+            if (!url || !url.startsWith('http')) {
+                alert('Please enter a valid URL starting with http:// or https://');
+                return;
+            }
+            
+            btn.classList.add('loading');
+            btn.textContent = 'Processing...';
+            
+            try {
+                const response = await fetch(`${API_URL}/shorten`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.className = 'result';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Success!</strong><br>
+                        <strong>Short URL:</strong> <a href="${data.shortUrl}" target="_blank">${data.shortUrl}</a><br>
+                        <small>Redirects to: ${data.originalUrl}</small>
+                    `;
+                    input.value = '';
+                    loadStats(); // Refresh list
+                } else {
+                    throw new Error(data.error || 'Failed to shorten');
+                }
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            } finally {
+                btn.classList.remove('loading');
+                btn.textContent = 'Shorten';
+            }
+        }
+        
+        async function loadStats() {
+            const tbody = document.getElementById('statsBody');
+            tbody.innerHTML = '<tr><td colspan="3">Loading...</td></tr>';
+            
+            try {
+                const response = await fetch(`${API_URL}/stats`);
+                const data = await response.json();
+                
+                if (data.urls && data.urls.length > 0) {
+                    tbody.innerHTML = data.urls.map(item => `
+                        <tr>
+                            <td><a href="${API_URL.replace(/\/[^\/]+$/, '')}/${item.shortCode}" target="_blank">${item.shortCode}</a></td>
+                            <td title="${item.originalUrl}">${item.originalUrl}</td>
+                            <td>${new Date(parseInt(item.created)*1000).toLocaleDateString()}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="3">No URLs created yet</td></tr>';
+                }
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="3" style="color:red">Error loading data: ${error.message}</td></tr>`;
+            }
+        }
+        
+        // Load stats on page load
+        window.onload = loadStats;
+    </script>
+</body>
+</html>
